@@ -88,8 +88,6 @@ export const CustomerWidget: React.FC<CustomerWidgetProps> = ({ userId, conversa
               </svg>
             </button>
           </form>
-        </>
-      )}
     </div>
   );
 };
