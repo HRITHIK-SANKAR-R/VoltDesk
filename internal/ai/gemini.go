@@ -65,7 +65,7 @@ Here is the recent conversation history:
 Your reply as the agent:`, contextStr.String())
 
 	ctx := context.Background()
-	resp, err := client.Models.GenerateContent(ctx, "gemini-2.5-flash", genai.Text(prompt), nil)
+	resp, err := client.Models.GenerateContent(ctx, "gemini-3.1-flash-lite", genai.Text(prompt), nil)
 	if err != nil {
 		return nil, err
 	}
