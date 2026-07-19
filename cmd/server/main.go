@@ -11,7 +11,6 @@ import (
 	"voltdesk/internal/auth"
 	"voltdesk/internal/database"
 
-	"github.com/golang-jwt/jwt/v5"
 	"voltdesk/internal/models"
 	"voltdesk/internal/websocket"
 	"voltdesk/internal/worker"
@@ -54,30 +53,32 @@ func main() {
 
 	// Get current user session info
 	http.HandleFunc("/api/auth/me", func(w http.ResponseWriter, r *http.Request) {
-		cookie, err := r.Cookie("session_token")
+		cookie, err := r.Cookie("aes_session")
 		if err != nil {
 			http.Error(w, "Unauthorized", http.StatusUnauthorized)
 			return
 		}
-		
-		claims := &auth.Claims{}
-		tkn, err := jwt.ParseWithClaims(cookie.Value, claims, func(token *jwt.Token) (interface{}, error) {
-			secret := os.Getenv("JWT_SECRET")
-			if secret == "" {
-				secret = "super-secret-default-key-for-dev"
-			}
-			return []byte(secret), nil
-		})
 
-		if err != nil || !tkn.Valid {
+		claims, err := auth.DecryptSession(cookie.Value)
+		if err != nil {
 			http.Error(w, "Unauthorized", http.StatusUnauthorized)
+			return
+		}
+
+		// Fetch full profile from DB
+		var user models.User
+		err = db.QueryRow(`
+			SELECT id, email, role, name, avatar_url, created_at 
+			FROM users WHERE id = $1
+		`, claims.UserID).Scan(&user.ID, &user.Email, &user.Role, &user.Name, &user.AvatarURL, &user.CreatedAt)
+
+		if err != nil {
+			http.Error(w, "User not found", http.StatusNotFound)
 			return
 		}
 
 		var convID string
 		if claims.Role == "customer" {
-			// In production, queries should be accessible or use a global db instance.
-			// Luckily queries is captured in the scope from main()
 			conv, err := queries.GetOrCreateOpenConversation(claims.UserID)
 			if err == nil {
 				convID = conv.ID
@@ -85,10 +86,31 @@ func main() {
 		}
 
 		json.NewEncoder(w).Encode(map[string]interface{}{
-			"user_id":         claims.UserID,
-			"role":            claims.Role,
+			"user_id":         user.ID,
+			"role":            user.Role,
+			"email":           user.Email,
+			"name":            user.Name,
+			"avatar_url":      user.AvatarURL,
 			"conversation_id": convID,
 		})
+	})
+
+	// Logout handler
+	http.HandleFunc("/api/auth/logout", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != "POST" {
+			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		http.SetCookie(w, &http.Cookie{
+			Name:     "aes_session",
+			Value:    "",
+			Path:     "/",
+			MaxAge:   -1,
+			HttpOnly: true,
+			Secure:   true,
+			SameSite: http.SameSiteStrictMode,
+		})
+		w.WriteHeader(http.StatusOK)
 	})
 
 	http.HandleFunc("/api/conversations/", func(w http.ResponseWriter, r *http.Request) {

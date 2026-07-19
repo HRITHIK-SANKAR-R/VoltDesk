@@ -2,14 +2,19 @@ package auth
 
 import (
 	"context"
+	"crypto/aes"
+	"crypto/cipher"
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
+	"errors"
+	"io"
 	"net/http"
 	"os"
 	"time"
 
 	"voltdesk/internal/models"
 
-	"github.com/golang-jwt/jwt/v5"
 	"golang.org/x/oauth2"
 	"golang.org/x/oauth2/google"
 )
@@ -22,21 +27,93 @@ var googleOauthConfig = &oauth2.Config{
 	Endpoint:     google.Endpoint,
 }
 
-var jwtSecret = []byte(os.Getenv("JWT_SECRET"))
+var aesSessionKey []byte
 
-type Claims struct {
+type SessionClaims struct {
 	UserID string `json:"user_id"`
 	Role   string `json:"role"`
-	jwt.RegisteredClaims
+	Exp    int64  `json:"exp"`
 }
 
 func InitOAuth() {
 	googleOauthConfig.ClientID = os.Getenv("GOOGLE_CLIENT_ID")
 	googleOauthConfig.ClientSecret = os.Getenv("GOOGLE_CLIENT_SECRET")
-	jwtSecret = []byte(os.Getenv("JWT_SECRET"))
-	if len(jwtSecret) == 0 {
-		jwtSecret = []byte("super-secret-default-key-for-dev")
+	
+	keyHex := os.Getenv("AES_SESSION_KEY")
+	if keyHex == "" {
+		// Fallback for dev - 32 byte key for AES-256
+		aesSessionKey = []byte("0123456789abcdef0123456789abcdef") 
+	} else {
+		key, err := hex.DecodeString(keyHex)
+		if err != nil || len(key) != 32 {
+			panic("AES_SESSION_KEY must be a valid 32-byte hex string (64 characters)")
+		}
+		aesSessionKey = key
 	}
+}
+
+func EncryptSession(claims SessionClaims) (string, error) {
+	plaintext, err := json.Marshal(claims)
+	if err != nil {
+		return "", err
+	}
+
+	block, err := aes.NewCipher(aesSessionKey)
+	if err != nil {
+		return "", err
+	}
+
+	aesGCM, err := cipher.NewGCM(block)
+	if err != nil {
+		return "", err
+	}
+
+	nonce := make([]byte, aesGCM.NonceSize())
+	if _, err = io.ReadFull(rand.Reader, nonce); err != nil {
+		return "", err
+	}
+
+	ciphertext := aesGCM.Seal(nonce, nonce, plaintext, nil)
+	return hex.EncodeToString(ciphertext), nil
+}
+
+func DecryptSession(encryptedHex string) (*SessionClaims, error) {
+	encrypted, err := hex.DecodeString(encryptedHex)
+	if err != nil {
+		return nil, err
+	}
+
+	block, err := aes.NewCipher(aesSessionKey)
+	if err != nil {
+		return nil, err
+	}
+
+	aesGCM, err := cipher.NewGCM(block)
+	if err != nil {
+		return nil, err
+	}
+
+	nonceSize := aesGCM.NonceSize()
+	if len(encrypted) < nonceSize {
+		return nil, errors.New("ciphertext too short")
+	}
+
+	nonce, ciphertext := encrypted[:nonceSize], encrypted[nonceSize:]
+	plaintext, err := aesGCM.Open(nil, nonce, ciphertext, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	var claims SessionClaims
+	if err := json.Unmarshal(plaintext, &claims); err != nil {
+		return nil, err
+	}
+
+	if time.Now().Unix() > claims.Exp {
+		return nil, errors.New("session expired")
+	}
+
+	return &claims, nil
 }
 
 func LoginHandler(w http.ResponseWriter, r *http.Request) {
@@ -65,8 +142,10 @@ func CallbackHandler(queries *models.Queries) http.HandlerFunc {
 		defer response.Body.Close()
 
 		var userInfo struct {
-			ID    string `json:"id"`
-			Email string `json:"email"`
+			ID      string `json:"id"`
+			Email   string `json:"email"`
+			Name    string `json:"name"`
+			Picture string `json:"picture"`
 		}
 		if err := json.NewDecoder(response.Body).Decode(&userInfo); err != nil {
 			http.Error(w, "Failed to decode user info", http.StatusInternalServerError)
@@ -74,36 +153,35 @@ func CallbackHandler(queries *models.Queries) http.HandlerFunc {
 		}
 
 		// DB Insert/Fetch
-		user, err := queries.GetOrCreateUserByGoogleID(userInfo.Email, userInfo.ID)
+		user, err := queries.GetOrCreateUserByGoogleID(userInfo.Email, userInfo.ID, userInfo.Name, userInfo.Picture)
 		if err != nil {
 			http.Error(w, "Failed to create user", http.StatusInternalServerError)
 			return
 		}
 
-		// Generate JWT
-		expirationTime := time.Now().Add(24 * time.Hour)
-		claims := &Claims{
+		// Generate AES Session
+		expirationTime := time.Now().Add(7 * 24 * time.Hour) // 7 days
+		claims := SessionClaims{
 			UserID: user.ID,
 			Role:   user.Role,
-			RegisteredClaims: jwt.RegisteredClaims{
-				ExpiresAt: jwt.NewNumericDate(expirationTime),
-			},
+			Exp:    expirationTime.Unix(),
 		}
 
-		jwtToken := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
-		tokenString, err := jwtToken.SignedString(jwtSecret)
+		sessionStr, err := EncryptSession(claims)
 		if err != nil {
-			http.Error(w, "Failed to generate token", http.StatusInternalServerError)
+			http.Error(w, "Failed to encrypt session", http.StatusInternalServerError)
 			return
 		}
 
 		http.SetCookie(w, &http.Cookie{
-			Name:     "session_token",
-			Value:    tokenString,
+			Name:     "aes_session",
+			Value:    sessionStr,
 			Expires:  expirationTime,
+			MaxAge:   int(7 * 24 * time.Hour / time.Second),
 			HttpOnly: true,
+			Secure:   true, // Usually false in local dev without HTTPS, but explicitly required in specs. React 19 dev uses HTTP so let's see. If the spec says `Secure: true`, I must add it. Wait, if it's over local HTTP, Secure: true might cause cookies to be rejected by the browser. But it says "The cookie MUST be configured with: HttpOnly: true, Secure: true".
 			Path:     "/",
-			SameSite: http.SameSiteLaxMode,
+			SameSite: http.SameSiteStrictMode,
 		})
 		
 		// For the customer, ensure they have an open conversation ready
@@ -122,19 +200,14 @@ func CallbackHandler(queries *models.Queries) http.HandlerFunc {
 
 func AuthMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		cookie, err := r.Cookie("session_token")
+		cookie, err := r.Cookie("aes_session")
 		if err != nil {
 			http.Error(w, "Unauthorized", http.StatusUnauthorized)
 			return
 		}
 
-		tokenStr := cookie.Value
-		claims := &Claims{}
-		tkn, err := jwt.ParseWithClaims(tokenStr, claims, func(token *jwt.Token) (interface{}, error) {
-			return jwtSecret, nil
-		})
-
-		if err != nil || !tkn.Valid {
+		claims, err := DecryptSession(cookie.Value)
+		if err != nil {
 			http.Error(w, "Unauthorized", http.StatusUnauthorized)
 			return
 		}
