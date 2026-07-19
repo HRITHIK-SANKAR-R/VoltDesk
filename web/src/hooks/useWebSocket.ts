@@ -48,6 +48,8 @@ export function useWebSocket(url: string | null) {
     connect();
     return () => {
       if (wsRef.current) {
+        // Remove onclose handler to prevent auto-reconnect on intentional component unmount
+        wsRef.current.onclose = null;
         wsRef.current.close();
       }
     };
