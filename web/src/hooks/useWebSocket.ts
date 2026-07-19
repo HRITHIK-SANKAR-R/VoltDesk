@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
-import { MessagePayload, WsEvent } from '../types';
+import type { MessagePayload, WsEvent } from '../types';
 
 export function useWebSocket(url: string | null) {
   const [isConnected, setIsConnected] = useState(false);
