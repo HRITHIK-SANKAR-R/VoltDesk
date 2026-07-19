@@ -32,12 +32,14 @@ func main() {
 	hub := websocket.NewHub(queries)
 	go hub.Run()
 
-	// Start Idle Worker
+	// Start Idle & Archiver Worker
+	worker.InitArchiver()
 	ticker := time.NewTicker(1 * time.Minute)
 	defer ticker.Stop()
 	go func() {
 		for range ticker.C {
 			worker.CheckIdleConversations(queries)
+			worker.ArchiveOldConversations(queries)
 		}
 	}()
 
