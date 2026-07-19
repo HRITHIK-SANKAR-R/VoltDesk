@@ -1,35 +1,32 @@
 import React, { useState, useEffect } from 'react';
 import { useWebSocket } from '../hooks/useWebSocket';
 
-export const CustomerWidget: React.FC = () => {
+interface CustomerWidgetProps {
+  userId: string;
+  conversationId: string;
+}
+
+export const CustomerWidget: React.FC<CustomerWidgetProps> = ({ userId, conversationId }) => {
   const [isOpen, setIsOpen] = useState(false);
   const [inputText, setInputText] = useState('');
-  const [email, setEmail] = useState('');
-  const [session, setSession] = useState<{ user_id: string; conversation_id: string } | null>(null);
   
-  const wsUrl = session ? `ws://localhost:8081/ws?user_id=${session.user_id}&role=customer&conversation_id=${session.conversation_id}` : null;
+  const wsUrl = `ws://localhost:8081/ws?user_id=${userId}&role=customer&conversation_id=${conversationId}`;
   const { isConnected, messages, setMessages, sendMessage } = useWebSocket(wsUrl);
 
-  const handleStartSession = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!email) return;
-    try {
-      const res = await fetch(`http://localhost:8081/api/auth/customer?email=${encodeURIComponent(email)}`, { method: 'POST' });
-      const data = await res.json();
-      setSession(data);
-      
-      const histRes = await fetch(`http://localhost:8081/api/conversations/${data.conversation_id}/messages`);
-      const hist = await histRes.json();
-      if (hist) setMessages(hist.reverse());
-    } catch (err) {
-      console.error(err);
-    }
-  };
+  useEffect(() => {
+    // Fetch history
+    fetch(`http://localhost:8081/api/conversations/${conversationId}/messages`)
+      .then(r => r.json())
+      .then(hist => {
+        if (hist) setMessages(hist.reverse());
+      })
+      .catch(console.error);
+  }, [conversationId, setMessages]);
 
   const handleSend = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!inputText.trim() || !session) return;
-    sendMessage(inputText, session.conversation_id);
+    if (!inputText.trim()) return;
+    sendMessage(inputText, conversationId);
     setInputText('');
   };
 
@@ -46,7 +43,6 @@ export const CustomerWidget: React.FC = () => {
     );
   }
 
-  // Reverse messages for flex-col-reverse
   const reversedMessages = [...messages].reverse();
 
   return (
@@ -60,26 +56,9 @@ export const CustomerWidget: React.FC = () => {
         </button>
       </div>
 
-      {!session ? (
-        <form onSubmit={handleStartSession} className="p-4 flex flex-col gap-4 flex-1 justify-center bg-slate-50">
-          <p className="text-sm text-slate-600 text-center">Please enter your email to start chatting.</p>
-          <input 
-            type="email" 
-            placeholder="Email address"
-            className="border border-slate-300 rounded px-3 py-2 focus:outline-none focus:border-orange-500 focus:ring-1 focus:ring-orange-500"
-            value={email}
-            onChange={e => setEmail(e.target.value)}
-            required
-          />
-          <button type="submit" className="bg-orange-600 text-white py-2 rounded font-medium hover:bg-orange-700 transition-colors">
-            Start Chat
-          </button>
-        </form>
-      ) : (
-        <>
           <div className="flex-1 overflow-y-auto flex flex-col-reverse p-4 gap-3 bg-slate-50">
             {reversedMessages.map((m) => {
-              const isSelf = m.sender_id === session.user_id;
+              const isSelf = m.sender_id === userId;
               return (
                 <div key={m.id} className={`flex ${isSelf ? 'justify-end' : 'justify-start'}`}>
                   <div className={`max-w-[85%] px-4 py-2 text-sm shadow-sm ${

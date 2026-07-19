@@ -10,6 +10,8 @@ import (
 	"voltdesk/internal/ai"
 	"voltdesk/internal/auth"
 	"voltdesk/internal/database"
+
+	"github.com/golang-jwt/jwt/v5"
 	"voltdesk/internal/models"
 	"voltdesk/internal/websocket"
 	"voltdesk/internal/worker"
@@ -57,9 +59,36 @@ func main() {
 			http.Error(w, "Unauthorized", http.StatusUnauthorized)
 			return
 		}
-		// In a real app we'd parse and return claims properly, but let's just return basic info for demo
-		// since we did validation in AuthMiddleware. For this endpoint we'll just let them use the middleware.
-		w.Write([]byte("ok"))
+		
+		claims := &auth.Claims{}
+		tkn, err := jwt.ParseWithClaims(cookie.Value, claims, func(token *jwt.Token) (interface{}, error) {
+			secret := os.Getenv("JWT_SECRET")
+			if secret == "" {
+				secret = "super-secret-default-key-for-dev"
+			}
+			return []byte(secret), nil
+		})
+
+		if err != nil || !tkn.Valid {
+			http.Error(w, "Unauthorized", http.StatusUnauthorized)
+			return
+		}
+
+		var convID string
+		if claims.Role == "customer" {
+			// In production, queries should be accessible or use a global db instance.
+			// Luckily queries is captured in the scope from main()
+			conv, err := queries.GetOrCreateOpenConversation(claims.UserID)
+			if err == nil {
+				convID = conv.ID
+			}
+		}
+
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"user_id":         claims.UserID,
+			"role":            claims.Role,
+			"conversation_id": convID,
+		})
 	})
 
 	http.HandleFunc("/api/conversations/", func(w http.ResponseWriter, r *http.Request) {
