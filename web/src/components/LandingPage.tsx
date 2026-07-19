@@ -59,7 +59,7 @@ export const LandingPage: React.FC = () => {
               </button>
             </div>
           ) : (
-            <a href="http://localhost:8081/api/auth/google/login" className="bg-slate-900 hover:bg-slate-800 text-white px-5 py-2.5 rounded-full font-medium transition-colors text-sm shadow-sm inline-flex items-center gap-2">
+            <a href="/api/auth/google/login" className="bg-slate-900 hover:bg-slate-800 text-white px-5 py-2.5 rounded-full font-medium transition-colors text-sm shadow-sm inline-flex items-center gap-2">
               <svg viewBox="0 0 24 24" className="w-4 h-4 fill-current">
                 <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/>
                 <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/>
@@ -84,7 +84,7 @@ export const LandingPage: React.FC = () => {
           VoltDesk provides an ultra-lean, WebSocket-driven support matrix powered by Google Gemini AI and Cloudflare R2 cold storage archiving.
         </p>
         <div className="mt-10">
-          <a href="http://localhost:8081/api/auth/google/login" className="bg-orange-600 hover:bg-orange-700 text-white px-8 py-4 rounded-full font-bold transition-all hover:shadow-lg text-lg inline-flex items-center gap-2 hover:-translate-y-1">
+          <a href="/api/auth/google/login" className="bg-orange-600 hover:bg-orange-700 text-white px-8 py-4 rounded-full font-bold transition-all hover:shadow-lg text-lg inline-flex items-center gap-2 hover:-translate-y-1">
             Start using VoltDesk free
             <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
               <path fillRule="evenodd" d="M10.293 3.293a1 1 0 011.414 0l6 6a1 1 0 010 1.414l-6 6a1 1 0 01-1.414-1.414L14.586 11H3a1 1 0 110-2h11.586l-4.293-4.293a1 1 0 010-1.414z" clipRule="evenodd" />

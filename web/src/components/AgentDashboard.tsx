@@ -12,13 +12,13 @@ export const AgentDashboard: React.FC = () => {
   const [draftText, setDraftText] = useState('');
   
   // Agent connection to hub (listens for all messages broadcasted to agent)
-  const wsUrl = `ws://localhost:8081/ws?user_id=${AGENT_ID}&role=agent&conversation_id=all`;
+  const wsUrl = `ws://${window.location.host}/ws?user_id=${AGENT_ID}&role=agent&conversation_id=all`;
   const { isConnected, messages, setMessages, smartDraft, setSmartDraft, sendMessage, acceptDraft } = useWebSocket(wsUrl);
   const draftInputRef = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {
     // Fetch queue
-    fetch('http://localhost:8081/api/conversations/')
+    fetch('/api/conversations/')
       .then(r => r.json())
       .then(data => setConversations(data || []))
       .catch(console.error);
@@ -27,7 +27,7 @@ export const AgentDashboard: React.FC = () => {
   useEffect(() => {
     if (activeConvId) {
       // Fetch messages for active conv
-      fetch(`http://localhost:8081/api/conversations/${activeConvId}/messages`)
+      fetch(`/api/conversations/${activeConvId}/messages`)
         .then(r => r.json())
         .then(data => setMessages((data || []).reverse()))
         .catch(console.error);

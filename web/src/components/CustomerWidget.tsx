@@ -10,12 +10,12 @@ export const CustomerWidget: React.FC<CustomerWidgetProps> = ({ userId, conversa
   const [isOpen, setIsOpen] = useState(false);
   const [inputText, setInputText] = useState('');
   
-  const wsUrl = `ws://localhost:8081/ws?user_id=${userId}&role=customer&conversation_id=${conversationId}`;
+  const wsUrl = `ws://${window.location.host}/ws?user_id=${userId}&role=customer&conversation_id=${conversationId}`;
   const { isConnected, messages, setMessages, sendMessage } = useWebSocket(wsUrl);
 
   useEffect(() => {
     // Fetch history
-    fetch(`http://localhost:8081/api/conversations/${conversationId}/messages`)
+    fetch(`/api/conversations/${conversationId}/messages`)
       .then(r => r.json())
       .then(hist => {
         if (hist) setMessages(hist.reverse());
