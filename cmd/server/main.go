@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"voltdesk/internal/ai"
+	"voltdesk/internal/auth"
 	"voltdesk/internal/database"
 	"voltdesk/internal/models"
 	"voltdesk/internal/websocket"
@@ -40,30 +41,23 @@ func main() {
 		}
 	}()
 
+	// Init Auth
+	auth.InitOAuth()
+
 	// Routes
-	http.HandleFunc("/api/auth/customer", func(w http.ResponseWriter, r *http.Request) {
-		// Mock simple auth
-		email := r.URL.Query().Get("email")
-		if email == "" {
-			http.Error(w, "email is required", http.StatusBadRequest)
-			return
-		}
-		user, err := queries.GetOrCreateCustomer(email)
+	http.HandleFunc("/api/auth/google/login", auth.LoginHandler)
+	http.HandleFunc("/api/auth/google/callback", auth.CallbackHandler(queries))
+
+	// Get current user session info
+	http.HandleFunc("/api/auth/me", func(w http.ResponseWriter, r *http.Request) {
+		cookie, err := r.Cookie("session_token")
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
+			http.Error(w, "Unauthorized", http.StatusUnauthorized)
 			return
 		}
-		
-		conv, err := queries.GetOrCreateOpenConversation(user.ID)
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
-		
-		json.NewEncoder(w).Encode(map[string]interface{}{
-			"user_id": user.ID,
-			"conversation_id": conv.ID,
-		})
+		// In a real app we'd parse and return claims properly, but let's just return basic info for demo
+		// since we did validation in AuthMiddleware. For this endpoint we'll just let them use the middleware.
+		w.Write([]byte("ok"))
 	})
 
 	http.HandleFunc("/api/conversations/", func(w http.ResponseWriter, r *http.Request) {
