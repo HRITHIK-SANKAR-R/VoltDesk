@@ -1,9 +1,11 @@
 package websocket
 
 import (
+	"bytes"
 	"encoding/json"
 	"log"
 	"net/http"
+	"sync"
 	"time"
 	"voltdesk/internal/models"
 
@@ -52,6 +54,13 @@ type WsIncomingEvent struct {
 	Payload json.RawMessage `json:"payload"`
 }
 
+// bufferPool provides a global pool of bytes.Buffer for zero-allocation websocket reads.
+var bufferPool = sync.Pool{
+	New: func() any {
+		return new(bytes.Buffer)
+	},
+}
+
 // readPump pumps messages from the websocket connection to the hub.
 func (c *Client) readPump() {
 	defer func() {
@@ -63,17 +72,29 @@ func (c *Client) readPump() {
 	c.conn.SetPongHandler(func(string) error { c.conn.SetReadDeadline(time.Now().Add(pongWait)); return nil })
 	
 	for {
-		_, rawMsg, err := c.conn.ReadMessage()
+		_, r, err := c.conn.NextReader()
 		if err != nil {
 			if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway, websocket.CloseAbnormalClosure) {
 				log.Printf("error: %v", err)
 			}
 			break
 		}
+
+		// Fetch a buffer from the pool and ensure it's explicitly reset
+		buf := bufferPool.Get().(*bytes.Buffer)
+		buf.Reset()
+		
+		_, err = buf.ReadFrom(r)
+		if err != nil {
+			log.Printf("error reading from ws: %v", err)
+			bufferPool.Put(buf)
+			break
+		}
 		
 		var incoming WsIncomingEvent
-		if err := json.Unmarshal(rawMsg, &incoming); err != nil {
+		if err := json.Unmarshal(buf.Bytes(), &incoming); err != nil {
 			log.Printf("error unmarshalling event: %v", err)
+			bufferPool.Put(buf)
 			continue
 		}
 
@@ -81,12 +102,14 @@ func (c *Client) readPump() {
 		case "chat_message":
 			var payload models.Message
 			if err := json.Unmarshal(incoming.Payload, &payload); err != nil {
+				bufferPool.Put(buf)
 				continue
 			}
-			// Save to DB
+			// Save to DB (Confirm transaction BEFORE broadcast)
 			savedMsg, err := c.hub.queries.SaveMessage(payload.ConversationID, c.UserID, payload.Content, false)
 			if err != nil {
 				log.Printf("error saving message: %v", err)
+				bufferPool.Put(buf)
 				continue
 			}
 			
@@ -101,15 +124,18 @@ func (c *Client) readPump() {
 		case "accept_ai_draft":
 			var payload AcceptDraftPayload
 			if err := json.Unmarshal(incoming.Payload, &payload); err != nil {
+				bufferPool.Put(buf)
 				continue
 			}
 			err := c.hub.queries.AcceptAIDraft(payload.MessageID)
 			if err != nil {
 				log.Printf("error accepting draft: %v", err)
-				continue
 			}
 			// Let agents know it was accepted by refetching or sending a sync event
 		}
+
+		// Safely return the buffer to the pool after all processing is complete
+		bufferPool.Put(buf)
 	}
 }
 

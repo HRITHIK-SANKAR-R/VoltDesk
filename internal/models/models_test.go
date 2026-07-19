@@ -3,6 +3,7 @@ package models
 import (
 	"testing"
 	"time"
+	"unsafe"
 
 	"github.com/DATA-DOG/go-sqlmock"
 )
@@ -70,5 +71,33 @@ func TestGetMessages(t *testing.T) {
 
 	if err := mock.ExpectationsWereMet(); err != nil {
 		t.Errorf("there were unfulfilled expectations: %s", err)
+	}
+}
+
+func TestStructMemoryPacking(t *testing.T) {
+	// Assert theoretical sizes without compiler padding.
+	// time.Time is 24 bytes (on 64-bit systems)
+	// string is 16 bytes (ptr + length)
+	// *string is 8 bytes
+	// bool is 1 byte
+
+	userSize := unsafe.Sizeof(User{})
+	expectedUserSize := uintptr(24 + 16 + 16 + 16 + 8) // 80 bytes
+	if userSize != expectedUserSize {
+		t.Errorf("User struct memory packing failed. Expected %d bytes, got %d", expectedUserSize, userSize)
+	}
+
+	convSize := unsafe.Sizeof(Conversation{})
+	expectedConvSize := uintptr(24 + 24 + 16 + 16 + 16) // 96 bytes
+	if convSize != expectedConvSize {
+		t.Errorf("Conversation struct memory packing failed. Expected %d bytes, got %d", expectedConvSize, convSize)
+	}
+
+	msgSize := unsafe.Sizeof(Message{})
+	// time.Time(24) + string(16)*4 + bool(1) = 89 bytes
+	// Due to 64-bit word alignment of the struct itself, it rounds up to a multiple of 8, which is 96 bytes.
+	expectedMsgSize := uintptr(96)
+	if msgSize != expectedMsgSize {
+		t.Errorf("Message struct memory packing failed. Expected %d bytes, got %d", expectedMsgSize, msgSize)
 	}
 }

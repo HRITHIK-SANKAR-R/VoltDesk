@@ -6,28 +6,28 @@ import (
 )
 
 type User struct {
+	CreatedAt time.Time `json:"created_at"`
 	ID        string    `json:"id"`
 	Email     string    `json:"email"`
 	Role      string    `json:"role"`
 	GoogleID  *string   `json:"google_id"`
-	CreatedAt time.Time `json:"created_at"`
 }
 
 type Conversation struct {
+	LastActivityAt time.Time `json:"last_activity_at"`
+	CreatedAt      time.Time `json:"created_at"`
 	ID             string    `json:"id"`
 	CustomerID     string    `json:"customer_id"`
 	Status         string    `json:"status"`
-	LastActivityAt time.Time `json:"last_activity_at"`
-	CreatedAt      time.Time `json:"created_at"`
 }
 
 type Message struct {
+	CreatedAt      time.Time `json:"created_at"`
 	ID             string    `json:"id"`
 	ConversationID string    `json:"conversation_id"`
 	SenderID       string    `json:"sender_id"`
 	Content        string    `json:"content"`
 	IsAIDraft      bool      `json:"is_ai_draft"`
-	CreatedAt      time.Time `json:"created_at"`
 }
 
 type Queries struct {
