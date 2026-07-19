@@ -75,8 +75,11 @@ Your reply as the agent:`, contextStr.String())
 	}
 
 	draftContent := ""
-	if part, ok := resp.Candidates[0].Content.Parts[0].(genai.Text); ok {
-		draftContent = string(part)
+	if len(resp.Candidates) > 0 && resp.Candidates[0].Content != nil && len(resp.Candidates[0].Content.Parts) > 0 {
+		part := resp.Candidates[0].Content.Parts[0]
+		if part.Text != "" {
+			draftContent = part.Text
+		}
 	}
 
 	// Save draft to DB
