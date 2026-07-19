@@ -127,11 +127,13 @@ func (c *Client) readPump() {
 				bufferPool.Put(buf)
 				continue
 			}
-			err := c.hub.queries.AcceptAIDraft(payload.MessageID)
+			acceptedMsg, err := c.hub.queries.AcceptAIDraft(payload.MessageID)
 			if err != nil {
 				log.Printf("error accepting draft: %v", err)
+			} else {
+				// Broadcast the accepted message to all clients so the customer instantly sees it
+				c.hub.broadcast <- acceptedMsg
 			}
-			// Let agents know it was accepted by refetching or sending a sync event
 		}
 
 		// Safely return the buffer to the pool after all processing is complete

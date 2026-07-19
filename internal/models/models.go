@@ -116,13 +116,26 @@ func (q *Queries) SaveMessage(conversationID, senderID, content string, isAIDraf
 }
 
 // AcceptAIDraft changes a draft to a sent message
-func (q *Queries) AcceptAIDraft(messageID string) error {
-	_, err := q.db.Exec(`
+func (q *Queries) AcceptAIDraft(messageID string) (*Message, error) {
+	var msg Message
+	err := q.db.QueryRow(`
 		UPDATE messages
 		SET is_ai_draft = FALSE, created_at = CURRENT_TIMESTAMP
 		WHERE id = $1
-	`, messageID)
-	return err
+		RETURNING id, conversation_id, sender_id, content, is_ai_draft, created_at
+	`, messageID).Scan(&msg.ID, &msg.ConversationID, &msg.SenderID, &msg.Content, &msg.IsAIDraft, &msg.CreatedAt)
+	if err != nil {
+		return nil, err
+	}
+	
+	// Also update conversation last_activity_at
+	_, err = q.db.Exec(`
+		UPDATE conversations
+		SET last_activity_at = CURRENT_TIMESTAMP
+		WHERE id = $1
+	`, msg.ConversationID)
+	
+	return &msg, err
 }
 
 // GetMessages retrieves recent messages for a conversation
