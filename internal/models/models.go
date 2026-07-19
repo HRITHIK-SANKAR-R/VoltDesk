@@ -10,6 +10,8 @@ type User struct {
 	ID        string    `json:"id"`
 	Email     string    `json:"email"`
 	Role      string    `json:"role"`
+	Name      *string   `json:"name"`
+	AvatarURL *string   `json:"avatar_url"`
 	GoogleID  *string   `json:"google_id"`
 }
 
@@ -210,14 +212,14 @@ func (q *Queries) GetIdleConversations() ([]IdleConversation, error) {
 }
 
 // GetOrCreateUserByGoogleID finds or creates a user using their Google profile
-func (q *Queries) GetOrCreateUserByGoogleID(email, googleID string) (*User, error) {
+func (q *Queries) GetOrCreateUserByGoogleID(email, googleID, name, avatarURL string) (*User, error) {
 	var user User
 	err := q.db.QueryRow(`
-		INSERT INTO users (email, role, google_id)
-		VALUES ($1, 'customer', $2)
-		ON CONFLICT (email) DO UPDATE SET google_id = $2
-		RETURNING id, email, role, google_id, created_at
-	`, email, googleID).Scan(&user.ID, &user.Email, &user.Role, &user.GoogleID, &user.CreatedAt)
+		INSERT INTO users (email, role, google_id, name, avatar_url)
+		VALUES ($1, 'customer', $2, $3, $4)
+		ON CONFLICT (email) DO UPDATE SET google_id = $2, name = $3, avatar_url = $4
+		RETURNING id, email, role, name, avatar_url, google_id, created_at
+	`, email, googleID, name, avatarURL).Scan(&user.ID, &user.Email, &user.Role, &user.Name, &user.AvatarURL, &user.GoogleID, &user.CreatedAt)
 	if err != nil {
 		return nil, err
 	}

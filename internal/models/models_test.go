@@ -82,7 +82,7 @@ func TestStructMemoryPacking(t *testing.T) {
 	// bool is 1 byte
 
 	userSize := unsafe.Sizeof(User{})
-	expectedUserSize := uintptr(24 + 16 + 16 + 16 + 8) // 80 bytes
+	expectedUserSize := uintptr(24 + 16 + 16 + 16 + 8 + 8 + 8) // 96 bytes
 	if userSize != expectedUserSize {
 		t.Errorf("User struct memory packing failed. Expected %d bytes, got %d", expectedUserSize, userSize)
 	}
