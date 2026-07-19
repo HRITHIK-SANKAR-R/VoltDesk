@@ -170,3 +170,40 @@ func (q *Queries) GetOpenConversations() ([]Conversation, error) {
 	}
 	return convs, nil
 }
+
+// IdleConversation represents the data needed for the notification worker
+type IdleConversation struct {
+	ConversationID string
+	CustomerEmail  string
+}
+
+// GetIdleConversations finds open conversations where the last activity is > 2 mins old
+// and the last message sender was a customer
+func (q *Queries) GetIdleConversations() ([]IdleConversation, error) {
+	rows, err := q.db.Query(`
+		SELECT c.id, u.email 
+		FROM conversations c
+		JOIN users u ON c.customer_id = u.id
+		WHERE c.status = 'open' 
+		  AND c.last_activity_at < NOW() - INTERVAL '2 minutes'
+		  AND (
+		      SELECT sender_id FROM messages 
+		      WHERE conversation_id = c.id 
+		      ORDER BY created_at DESC LIMIT 1
+		  ) = c.customer_id;
+	`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var idleConvs []IdleConversation
+	for rows.Next() {
+		var ic IdleConversation
+		if err := rows.Scan(&ic.ConversationID, &ic.CustomerEmail); err != nil {
+			return nil, err
+		}
+		idleConvs = append(idleConvs, ic)
+	}
+	return idleConvs, nil
+}
