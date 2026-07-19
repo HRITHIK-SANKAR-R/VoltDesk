@@ -9,6 +9,7 @@ type User struct {
 	ID        string    `json:"id"`
 	Email     string    `json:"email"`
 	Role      string    `json:"role"`
+	GoogleID  *string   `json:"google_id"`
 	CreatedAt time.Time `json:"created_at"`
 }
 
@@ -206,4 +207,86 @@ func (q *Queries) GetIdleConversations() ([]IdleConversation, error) {
 		idleConvs = append(idleConvs, ic)
 	}
 	return idleConvs, nil
+}
+
+// GetOrCreateUserByGoogleID finds or creates a user using their Google profile
+func (q *Queries) GetOrCreateUserByGoogleID(email, googleID string) (*User, error) {
+	var user User
+	err := q.db.QueryRow(`
+		INSERT INTO users (email, role, google_id)
+		VALUES ($1, 'customer', $2)
+		ON CONFLICT (email) DO UPDATE SET google_id = $2
+		RETURNING id, email, role, google_id, created_at
+	`, email, googleID).Scan(&user.ID, &user.Email, &user.Role, &user.GoogleID, &user.CreatedAt)
+	if err != nil {
+		return nil, err
+	}
+	return &user, nil
+}
+
+// GetOldResolvedConversations fetches conversations older than 30 days that are resolved
+func (q *Queries) GetOldResolvedConversations() ([]string, error) {
+	rows, err := q.db.Query(`
+		SELECT id FROM conversations 
+		WHERE status = 'resolved' AND last_activity_at < NOW() - INTERVAL '30 days'
+	`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var ids []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		ids = append(ids, id)
+	}
+	return ids, nil
+}
+
+// GetMessagesForArchiving gets all messages for a specific conversation to archive
+func (q *Queries) GetMessagesForArchiving(conversationID string) ([]Message, error) {
+	rows, err := q.db.Query(`
+		SELECT id, conversation_id, sender_id, content, is_ai_draft, created_at
+		FROM messages
+		WHERE conversation_id = $1
+		ORDER BY created_at ASC
+	`, conversationID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var messages []Message
+	for rows.Next() {
+		var msg Message
+		if err := rows.Scan(&msg.ID, &msg.ConversationID, &msg.SenderID, &msg.Content, &msg.IsAIDraft, &msg.CreatedAt); err != nil {
+			return nil, err
+		}
+		messages = append(messages, msg)
+	}
+	return messages, nil
+}
+
+// DeleteConversationAndMessages deletes the conversation (which cascades to messages if FK is set, but we do it manually to be safe)
+func (q *Queries) DeleteConversationAndMessages(conversationID string) error {
+	tx, err := q.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	_, err = tx.Exec(`DELETE FROM messages WHERE conversation_id = $1`, conversationID)
+	if err != nil {
+		return err
+	}
+
+	_, err = tx.Exec(`DELETE FROM conversations WHERE id = $1`, conversationID)
+	if err != nil {
+		return err
+	}
+
+	return tx.Commit()
 }
