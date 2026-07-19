@@ -3,6 +3,7 @@ package websocket
 import (
 	"log"
 	"sync"
+	"voltdesk/internal/ai"
 	"voltdesk/internal/models"
 )
 
@@ -106,9 +107,13 @@ func (h *Hub) BroadcastToConversation(message *models.Message) {
 
 // GenerateAIDraft triggers the AI generation and broadcasts the result
 func (h *Hub) GenerateAIDraft(conversationID string) {
-	// Call AI logic and get the draft
-	// We need to avoid import cycle if hub imports ai and ai imports hub
-	// Since AI just returns a message, hub can broadcast it
-	// Actually we should just call ai.GenerateDraft
-	// Let's assume we do that from client.go or hub.go
+	draft, err := ai.GenerateDraft(h.queries, conversationID)
+	if err != nil {
+		log.Printf("AI Draft Generation Error: %v", err)
+		return
+	}
+	if draft != nil {
+		// Broadcast the AI draft specifically to the agents
+		h.BroadcastToAgent(draft)
+	}
 }
