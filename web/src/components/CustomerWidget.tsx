@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useWebSocket } from '../hooks/useWebSocket';
 
 export const CustomerWidget: React.FC = () => {
@@ -7,27 +7,20 @@ export const CustomerWidget: React.FC = () => {
   const [email, setEmail] = useState('');
   const [session, setSession] = useState<{ user_id: string; conversation_id: string } | null>(null);
   
-  const wsUrl = session ? `ws://localhost:8080/ws?user_id=${session.user_id}&role=customer&conversation_id=${session.conversation_id}` : null;
+  const wsUrl = session ? `ws://localhost:8081/ws?user_id=${session.user_id}&role=customer&conversation_id=${session.conversation_id}` : null;
   const { isConnected, messages, setMessages, sendMessage } = useWebSocket(wsUrl);
-  
-  const messagesEndRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages]);
 
   const handleStartSession = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!email) return;
     try {
-      const res = await fetch(`http://localhost:8080/api/auth/customer?email=${encodeURIComponent(email)}`, { method: 'POST' });
+      const res = await fetch(`http://localhost:8081/api/auth/customer?email=${encodeURIComponent(email)}`, { method: 'POST' });
       const data = await res.json();
       setSession(data);
       
-      const histRes = await fetch(`http://localhost:8080/api/conversations/${data.conversation_id}/messages`);
+      const histRes = await fetch(`http://localhost:8081/api/conversations/${data.conversation_id}/messages`);
       const hist = await histRes.json();
       if (hist) setMessages(hist.reverse());
-      
     } catch (err) {
       console.error(err);
     }
@@ -52,6 +45,9 @@ export const CustomerWidget: React.FC = () => {
       </button>
     );
   }
+
+  // Reverse messages for flex-col-reverse
+  const reversedMessages = [...messages].reverse();
 
   return (
     <div className="fixed bottom-0 right-0 sm:bottom-6 sm:right-6 w-full h-full sm:w-80 sm:h-96 bg-white sm:rounded-xl shadow-2xl flex flex-col overflow-hidden z-50 border border-slate-200">
@@ -81,23 +77,22 @@ export const CustomerWidget: React.FC = () => {
         </form>
       ) : (
         <>
-          <div className="flex-1 overflow-y-auto p-4 flex flex-col gap-3 bg-slate-50">
-            {messages.length === 0 && <p className="text-center text-slate-400 text-sm mt-4">Send a message to start.</p>}
-            {messages.map((m) => {
+          <div className="flex-1 overflow-y-auto flex flex-col-reverse p-4 gap-3 bg-slate-50">
+            {reversedMessages.map((m) => {
               const isSelf = m.sender_id === session.user_id;
               return (
                 <div key={m.id} className={`flex ${isSelf ? 'justify-end' : 'justify-start'}`}>
                   <div className={`max-w-[85%] px-4 py-2 text-sm shadow-sm ${
                     isSelf 
                       ? 'bg-orange-600 text-white rounded-l-lg rounded-tr-lg' 
-                      : 'bg-white border border-slate-200 text-slate-800 rounded-r-lg rounded-tl-lg'
+                      : 'bg-slate-100 text-slate-800 border border-slate-200 rounded-r-lg rounded-tl-lg'
                   }`}>
                     {m.content}
                   </div>
                 </div>
               );
             })}
-            <div ref={messagesEndRef} />
+            {reversedMessages.length === 0 && <p className="text-center text-slate-400 text-sm mt-4 w-full">Send a message to start.</p>}
           </div>
           
           <form onSubmit={handleSend} className="p-3 bg-white border-t border-slate-100 flex items-center gap-2 shrink-0">

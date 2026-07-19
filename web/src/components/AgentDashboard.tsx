@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useWebSocket } from '../hooks/useWebSocket';
-import { Conversation, MessagePayload } from '../types';
+import type { Conversation, MessagePayload } from '../types';
 
 // Hardcoded agent ID for demo purposes
 const AGENT_ID = 'agent-123';
@@ -12,14 +12,13 @@ export const AgentDashboard: React.FC = () => {
   const [draftText, setDraftText] = useState('');
   
   // Agent connection to hub (listens for all messages broadcasted to agent)
-  const wsUrl = `ws://localhost:8080/ws?user_id=${AGENT_ID}&role=agent&conversation_id=all`;
+  const wsUrl = `ws://localhost:8081/ws?user_id=${AGENT_ID}&role=agent&conversation_id=all`;
   const { isConnected, messages, setMessages, smartDraft, setSmartDraft, sendMessage, acceptDraft } = useWebSocket(wsUrl);
-  const messagesEndRef = useRef<HTMLDivElement>(null);
   const draftInputRef = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {
     // Fetch queue
-    fetch('http://localhost:8080/api/conversations/')
+    fetch('http://localhost:8081/api/conversations/')
       .then(r => r.json())
       .then(data => setConversations(data || []))
       .catch(console.error);
@@ -28,16 +27,12 @@ export const AgentDashboard: React.FC = () => {
   useEffect(() => {
     if (activeConvId) {
       // Fetch messages for active conv
-      fetch(`http://localhost:8080/api/conversations/${activeConvId}/messages`)
+      fetch(`http://localhost:8081/api/conversations/${activeConvId}/messages`)
         .then(r => r.json())
         .then(data => setMessages((data || []).reverse()))
         .catch(console.error);
     }
   }, [activeConvId, setMessages]);
-
-  useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages]);
   
   useEffect(() => {
     if (smartDraft) {
@@ -55,6 +50,7 @@ export const AgentDashboard: React.FC = () => {
   };
 
   const activeMessages = messages.filter(m => m.conversation_id === activeConvId);
+  const reversedMessages = [...activeMessages].reverse();
 
   return (
     <div className="w-screen h-screen overflow-hidden flex bg-slate-50 text-slate-900">
@@ -101,8 +97,8 @@ export const AgentDashboard: React.FC = () => {
               <button className="text-sm text-slate-500 hover:text-slate-800 transition-colors">Mark Resolved</button>
             </div>
             
-            <div className="flex-1 overflow-y-auto p-6 flex flex-col gap-4">
-              {activeMessages.map(m => {
+            <div className="flex-1 overflow-y-auto flex flex-col-reverse p-6 gap-4">
+              {reversedMessages.map(m => {
                 const isAgent = m.sender_id === AGENT_ID;
                 return (
                   <div key={m.id} className={`flex ${isAgent ? 'justify-end' : 'justify-start'}`}>
@@ -116,7 +112,6 @@ export const AgentDashboard: React.FC = () => {
                   </div>
                 );
               })}
-              <div ref={messagesEndRef} />
             </div>
 
             <div className="p-4 bg-white border-t border-slate-200 flex flex-col gap-2 shrink-0">
@@ -136,8 +131,6 @@ export const AgentDashboard: React.FC = () => {
                     onKeyDown={(e) => {
                       if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
                         // send modified or original draft
-                        // Since acceptDraft in backend expects the exact message id,
-                        // if they modified it, we should send it as a normal message.
                         if (draftText !== smartDraft.content) {
                           sendMessage(draftText, activeConvId);
                           setSmartDraft(null);
