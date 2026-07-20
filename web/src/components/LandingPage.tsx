@@ -22,7 +22,7 @@ export const LandingPage: React.FC = () => {
 
     // Feature Cards ScrollTrigger Animation
     const cards = gsap.utils.toArray('.feature-card');
-    cards.forEach((card: any, i) => {
+    cards.forEach((card: any) => {
       gsap.fromTo(
         card,
         { opacity: 0, x: -50 },

@@ -1,20 +1,22 @@
 package websocket
 
 import (
+	"context"
 	"log"
 	"sync"
+
 	"voltdesk/internal/ai"
 	"voltdesk/internal/models"
+
+	"github.com/redis/go-redis/v9"
+	"github.com/vmihailenco/msgpack/v5"
 )
 
-// Hub maintains the set of active clients and broadcasts messages to the clients.
+// Hub maintains the set of active clients and subscribes to Redis Pub/Sub.
 type Hub struct {
 	// Registered clients map protected by mutex
 	clients map[*Client]bool
 	mu      sync.RWMutex
-
-	// Inbound messages from the clients.
-	broadcast chan *models.Message
 
 	// Register requests from the clients.
 	register chan *Client
@@ -24,19 +26,28 @@ type Hub struct {
 	
 	// Database queries instance
 	queries *models.Queries
+	
+	// Redis client
+	rdb *redis.Client
 }
 
-func NewHub(q *models.Queries) *Hub {
+func NewHub(q *models.Queries, rdb *redis.Client) *Hub {
 	return &Hub{
-		broadcast:  make(chan *models.Message),
 		register:   make(chan *Client),
 		unregister: make(chan *Client),
 		clients:    make(map[*Client]bool),
 		queries:    q,
+		rdb:        rdb,
 	}
 }
 
 func (h *Hub) Run() {
+	ctx := context.Background()
+	pubsub := h.rdb.PSubscribe(ctx, "room:*")
+	defer pubsub.Close()
+	
+	ch := pubsub.Channel()
+
 	for {
 		select {
 		case client := <-h.register:
@@ -54,16 +65,29 @@ func (h *Hub) Run() {
 			h.mu.Unlock()
 			log.Printf("Client disconnected. Total clients: %d", len(h.clients))
 			
-		case message := <-h.broadcast:
-			// Broadcast message to relevant clients
-			// In a real app, you'd only broadcast to clients in the same conversation
+		case msg := <-ch:
+			// Handle incoming Redis Pub/Sub payload
+			var payload map[string]interface{}
+			if err := msgpack.Unmarshal([]byte(msg.Payload), &payload); err != nil {
+				log.Printf("Failed to unmarshal msgpack: %v", err)
+				continue
+			}
+			
+			// Find conversation ID
+			var convID string
+			if cid, ok := payload["conversation_id"].(string); ok {
+				convID = cid
+			} else {
+				continue
+			}
+
 			h.mu.RLock()
 			for client := range h.clients {
-				// To keep it simple, we check if the client is associated with this conversation
-				// Or if the client is an agent
-				if client.Role == "agent" || client.ConversationID == message.ConversationID {
+				// Route only to matching client or any agent
+				if client.ConversationID == convID || client.Role == "agent" {
+					// We push the raw payload map to client.send (it's chan any)
 					select {
-					case client.send <- message:
+					case client.send <- payload:
 					default:
 						// If send buffer is full or blocked, drop the connection
 						close(client.send)
@@ -76,36 +100,24 @@ func (h *Hub) Run() {
 	}
 }
 
-// BroadcastToAgent sends a specific message directly to agents
-func (h *Hub) BroadcastToAgent(message *models.Message) {
-	h.mu.RLock()
-	defer h.mu.RUnlock()
-	for client := range h.clients {
-		if client.Role == "agent" {
-			select {
-			case client.send <- message:
-			default:
-				// ignore
-			}
-		}
+// BroadcastControl publishes a control message to Redis
+func (h *Hub) BroadcastControl(conversationID string, controlType string) {
+	controlMsg := map[string]interface{}{
+		"type":            controlType,
+		"conversation_id": conversationID,
 	}
+	
+	b, err := msgpack.Marshal(controlMsg)
+	if err != nil {
+		log.Printf("Failed to marshal control msg: %v", err)
+		return
+	}
+	
+	ctx := context.Background()
+	h.rdb.Publish(ctx, "room:"+conversationID, b)
 }
 
-func (h *Hub) BroadcastToConversation(message *models.Message) {
-	h.mu.RLock()
-	defer h.mu.RUnlock()
-	for client := range h.clients {
-		if client.ConversationID == message.ConversationID || client.Role == "agent" {
-			select {
-			case client.send <- message:
-			default:
-				// ignore
-			}
-		}
-	}
-}
-
-// GenerateAIDraft triggers the AI generation and broadcasts the result
+// GenerateAIDraft triggers the AI generation and publishes the result
 func (h *Hub) GenerateAIDraft(conversationID string) {
 	draft, err := ai.GenerateDraft(h.queries, conversationID)
 	if err != nil {
@@ -113,7 +125,16 @@ func (h *Hub) GenerateAIDraft(conversationID string) {
 		return
 	}
 	if draft != nil {
-		// Broadcast the AI draft specifically to the agents
-		h.BroadcastToAgent(draft)
+		// Publish to Redis
+		msgData := map[string]interface{}{
+			"type": "ai_smart_draft",
+			"payload": draft,
+			"conversation_id": conversationID,
+		}
+		b, err := msgpack.Marshal(msgData)
+		if err == nil {
+			ctx := context.Background()
+			h.rdb.Publish(ctx, "room:"+conversationID, b)
+		}
 	}
 }

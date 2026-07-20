@@ -2,6 +2,7 @@ package websocket
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"log"
 	"net/http"
@@ -10,6 +11,7 @@ import (
 	"voltdesk/internal/models"
 
 	"github.com/gorilla/websocket"
+	"github.com/vmihailenco/msgpack/v5"
 )
 
 const (
@@ -32,7 +34,7 @@ var upgrader = websocket.Upgrader{
 type Client struct {
 	hub *Hub
 	conn *websocket.Conn
-	send chan *models.Message
+	send chan any
 	
 	UserID         string
 	Role           string
@@ -113,8 +115,16 @@ func (c *Client) readPump() {
 				continue
 			}
 			
-			// Broadcast
-			c.hub.broadcast <- savedMsg
+			// Publish to Redis
+			msgData := map[string]interface{}{
+				"type":            "chat_message",
+				"payload":         savedMsg,
+				"conversation_id": savedMsg.ConversationID,
+			}
+			b, err := msgpack.Marshal(msgData)
+			if err == nil {
+				c.hub.rdb.Publish(context.Background(), "room:"+savedMsg.ConversationID, b)
+			}
 			
 			// Trigger AI asynchronously if it's a customer
 			if c.Role == "customer" {
@@ -131,8 +141,16 @@ func (c *Client) readPump() {
 			if err != nil {
 				log.Printf("error accepting draft: %v", err)
 			} else {
-				// Broadcast the accepted message to all clients so the customer instantly sees it
-				c.hub.broadcast <- acceptedMsg
+				// Publish the accepted message to Redis
+				msgData := map[string]interface{}{
+					"type":            "chat_message",
+					"payload":         acceptedMsg,
+					"conversation_id": acceptedMsg.ConversationID,
+				}
+				b, err := msgpack.Marshal(msgData)
+				if err == nil {
+					c.hub.rdb.Publish(context.Background(), "room:"+acceptedMsg.ConversationID, b)
+				}
 			}
 		}
 
@@ -157,19 +175,26 @@ func (c *Client) writePump() {
 				return
 			}
 
-			// Format for client
-			eventType := "chat_message"
-			if message.IsAIDraft {
-				eventType = "ai_smart_draft"
-			}
-			
-			event := WsEvent{
-				Type:    eventType,
-				Payload: message,
-			}
-
-			if err := c.conn.WriteJSON(event); err != nil {
-				return
+			switch v := message.(type) {
+			case *models.Message:
+				// Format for client
+				eventType := "chat_message"
+				if v.IsAIDraft {
+					eventType = "ai_smart_draft"
+				}
+				
+				event := WsEvent{
+					Type:    eventType,
+					Payload: v,
+				}
+				if err := c.conn.WriteJSON(event); err != nil {
+					return
+				}
+			default:
+				// Control messages directly encoded
+				if err := c.conn.WriteJSON(v); err != nil {
+					return
+				}
 			}
 		case <-ticker.C:
 			c.conn.SetWriteDeadline(time.Now().Add(writeWait))
@@ -189,7 +214,7 @@ func ServeWs(hub *Hub, w http.ResponseWriter, r *http.Request, userID, role, con
 	client := &Client{
 		hub:            hub,
 		conn:           conn,
-		send:           make(chan *models.Message, 256),
+		send:           make(chan any, 256),
 		UserID:         userID,
 		Role:           role,
 		ConversationID: conversationID,

@@ -5,6 +5,7 @@ export function useWebSocket(url: string | null) {
   const [isConnected, setIsConnected] = useState(false);
   const [messages, setMessages] = useState<MessagePayload[]>([]);
   const [smartDraft, setSmartDraft] = useState<MessagePayload | null>(null);
+  const [resolvedConvId, setResolvedConvId] = useState<string | null>(null);
   const wsRef = useRef<WebSocket | null>(null);
 
   const connect = useCallback(() => {
@@ -26,6 +27,8 @@ export function useWebSocket(url: string | null) {
           setMessages((prev) => [...prev, msg]);
         } else if (data.type === 'ai_smart_draft') {
           setSmartDraft(data.payload as MessagePayload);
+        } else if (data.type === 'SYS_RESOLVE') {
+          setResolvedConvId((data as any).conversation_id);
         }
       } catch (e) {
         console.error('Error parsing WS message', e);
@@ -79,5 +82,5 @@ export function useWebSocket(url: string | null) {
     }
   }, []);
 
-  return { isConnected, messages, setMessages, smartDraft, setSmartDraft, sendMessage, acceptDraft };
+  return { isConnected, messages, setMessages, smartDraft, setSmartDraft, resolvedConvId, setResolvedConvId, sendMessage, acceptDraft };
 }

@@ -179,9 +179,9 @@ func CallbackHandler(queries *models.Queries) http.HandlerFunc {
 			Expires:  expirationTime,
 			MaxAge:   int(7 * 24 * time.Hour / time.Second),
 			HttpOnly: true,
-			Secure:   false, // Must be false for local HTTP
+			Secure:   true, // Usually false in local dev without HTTPS, but explicitly required in specs. React 19 dev uses HTTP so let's see. If the spec says `Secure: true`, I must add it. Wait, if it's over local HTTP, Secure: true might cause cookies to be rejected by the browser. But it says "The cookie MUST be configured with: HttpOnly: true, Secure: true".
 			Path:     "/",
-			SameSite: http.SameSiteLaxMode, // Lax allows cross-port local dev
+			SameSite: http.SameSiteStrictMode,
 		})
 		
 		// For the customer, ensure they have an open conversation ready

@@ -1,6 +1,6 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useWebSocket } from '../hooks/useWebSocket';
-import type { Conversation, MessagePayload } from '../types';
+import type { Conversation } from '../types';
 
 // Hardcoded agent ID for demo purposes
 const AGENT_ID = 'agent-123';
@@ -9,12 +9,10 @@ export const AgentDashboard: React.FC = () => {
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [activeConvId, setActiveConvId] = useState<string | null>(null);
   const [inputText, setInputText] = useState('');
-  const [draftText, setDraftText] = useState('');
   
   // Agent connection to hub (listens for all messages broadcasted to agent)
   const wsUrl = `ws://${window.location.host}/ws?user_id=${AGENT_ID}&role=agent&conversation_id=all`;
-  const { isConnected, messages, setMessages, smartDraft, setSmartDraft, sendMessage, acceptDraft } = useWebSocket(wsUrl);
-  const draftInputRef = useRef<HTMLTextAreaElement>(null);
+  const { isConnected, messages, setMessages, smartDraft, setSmartDraft, resolvedConvId, setResolvedConvId, sendMessage } = useWebSocket(wsUrl);
 
   useEffect(() => {
     // Fetch queue
@@ -35,12 +33,39 @@ export const AgentDashboard: React.FC = () => {
   }, [activeConvId, setMessages]);
   
   useEffect(() => {
-    if (smartDraft) {
-      setDraftText(smartDraft.content);
-      // Auto focus on draft
-      setTimeout(() => draftInputRef.current?.focus(), 100);
+    if (resolvedConvId) {
+      setConversations(prev => prev.filter(c => c.id !== resolvedConvId));
+      if (activeConvId === resolvedConvId) {
+        setActiveConvId(null);
+        setInputText('');
+      }
+      setResolvedConvId(null);
     }
-  }, [smartDraft]);
+  }, [resolvedConvId, activeConvId, setResolvedConvId]);
+
+  useEffect(() => {
+    if (smartDraft && smartDraft.conversation_id === activeConvId) {
+      if (!inputText.trim()) {
+        setInputText(smartDraft.content);
+      }
+      setSmartDraft(null); // Move directly to input
+    }
+  }, [smartDraft, activeConvId, inputText, setSmartDraft]);
+
+  const handleResolve = async () => {
+    if (!activeConvId) return;
+    try {
+      const res = await fetch(`/api/conversations/${activeConvId}/resolve`, { method: 'PATCH' });
+      if (res.ok) {
+        setConversations(prev => prev.filter(c => c.id !== activeConvId));
+        setActiveConvId(null);
+        setInputText('');
+        setSmartDraft(null);
+      }
+    } catch (e) {
+      console.error(e);
+    }
+  };
 
   const handleSend = (e: React.FormEvent) => {
     e.preventDefault();
@@ -94,7 +119,7 @@ export const AgentDashboard: React.FC = () => {
           <>
             <div className="h-14 bg-white border-b border-slate-200 flex items-center px-6 justify-between shrink-0 shadow-sm z-10">
               <h3 className="font-semibold">Conversation ID: {activeConvId.substring(0,8)}...</h3>
-              <button className="text-sm text-slate-500 hover:text-slate-800 transition-colors">Mark Resolved</button>
+              <button onClick={handleResolve} className="text-sm text-slate-500 hover:text-slate-800 transition-colors">Mark Resolved</button>
             </div>
             
             <div className="flex-1 overflow-y-auto flex flex-col-reverse p-6 gap-4">
@@ -116,54 +141,6 @@ export const AgentDashboard: React.FC = () => {
 
             <div className="p-4 bg-white border-t border-slate-200 flex flex-col gap-2 shrink-0">
               
-              {/* AI Smart Draft Box */}
-              {smartDraft && smartDraft.conversation_id === activeConvId && (
-                <div className="bg-purple-50 border border-purple-200 border-dashed rounded-lg p-4 flex flex-col gap-3 animate-in slide-in-from-bottom-2">
-                  <div className="text-purple-600 text-xs font-semibold uppercase tracking-wider flex items-center gap-1">
-                    ✨ AI Suggested Reply
-                  </div>
-                  <textarea 
-                    ref={draftInputRef}
-                    className="w-full bg-transparent text-slate-800 text-sm focus:outline-none resize-none"
-                    value={draftText}
-                    onChange={e => setDraftText(e.target.value)}
-                    rows={2}
-                    onKeyDown={(e) => {
-                      if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
-                        // send modified or original draft
-                        if (draftText !== smartDraft.content) {
-                          sendMessage(draftText, activeConvId);
-                          setSmartDraft(null);
-                        } else {
-                          acceptDraft(smartDraft.id);
-                        }
-                      }
-                    }}
-                  />
-                  <div className="flex gap-2">
-                    <button 
-                      onClick={() => {
-                        if (draftText !== smartDraft.content) {
-                          sendMessage(draftText, activeConvId);
-                          setSmartDraft(null);
-                        } else {
-                          acceptDraft(smartDraft.id);
-                        }
-                      }}
-                      className="bg-purple-600 hover:bg-purple-700 text-white px-3 py-1.5 rounded-md text-sm font-medium transition-colors"
-                    >
-                      Accept & Send (Cmd+Enter)
-                    </button>
-                    <button 
-                      onClick={() => setSmartDraft(null)}
-                      className="text-slate-500 hover:text-slate-700 px-3 py-1.5 rounded-md text-sm font-medium transition-colors"
-                    >
-                      Discard
-                    </button>
-                  </div>
-                </div>
-              )}
-
               {/* Standard Input */}
               <form onSubmit={handleSend} className="flex gap-2 items-center">
                 <input 

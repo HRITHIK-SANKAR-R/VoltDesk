@@ -8,7 +8,7 @@ export interface MessagePayload {
 }
 
 export interface WsEvent {
-  type: 'chat_message' | 'ai_smart_draft' | 'accept_ai_draft';
+  type: 'chat_message' | 'ai_smart_draft' | 'accept_ai_draft' | 'SYS_RESOLVE';
   payload: any; // Ideally we use a union here
 }
 

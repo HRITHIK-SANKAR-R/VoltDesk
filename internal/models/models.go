@@ -79,6 +79,16 @@ func (q *Queries) GetOrCreateOpenConversation(customerID string) (*Conversation,
 	return &conv, nil
 }
 
+// ResolveConversation marks a conversation as resolved
+func (q *Queries) ResolveConversation(conversationID string) error {
+	_, err := q.db.Exec(`
+		UPDATE conversations
+		SET status = 'resolved', last_activity_at = CURRENT_TIMESTAMP
+		WHERE id = $1
+	`, conversationID)
+	return err
+}
+
 // SaveMessage saves a message and updates conversation activity
 func (q *Queries) SaveMessage(conversationID, senderID, content string, isAIDraft bool) (*Message, error) {
 	tx, err := q.db.Begin()

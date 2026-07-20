@@ -26,11 +26,15 @@ func main() {
 	defer db.Close()
 	queries := models.NewQueries(db)
 
+	// Init Redis
+	rdb := database.InitRedis()
+	defer rdb.Close()
+
 	// Init AI
 	ai.InitGemini()
 
 	// Init WebSocket Hub
-	hub := websocket.NewHub(queries)
+	hub := websocket.NewHub(queries, rdb)
 	go hub.Run()
 
 	// Start Idle & Archiver Worker
@@ -120,8 +124,22 @@ func main() {
 			idAndRest := path[len("/api/conversations/"):]
 			// Split and find id
 			// In production, we use proper routing
-			if len(idAndRest) > 36 { // length of uuid
+			if len(idAndRest) >= 36 { // length of uuid
 				id := idAndRest[:36]
+				
+				// Handle PATCH /api/conversations/{id}/resolve
+				if r.Method == "PATCH" && len(idAndRest) >= 36+len("/resolve") && idAndRest[36:] == "/resolve" {
+					err := queries.ResolveConversation(id)
+					if err != nil {
+						http.Error(w, err.Error(), http.StatusInternalServerError)
+						return
+					}
+					hub.BroadcastControl(id, "SYS_RESOLVE")
+					w.WriteHeader(http.StatusOK)
+					return
+				}
+
+				// Otherwise handle GET /messages
 				messages, err := queries.GetMessages(id, 50)
 				if err != nil {
 					http.Error(w, err.Error(), http.StatusInternalServerError)
