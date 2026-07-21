@@ -2,16 +2,17 @@ import React, { useState, useEffect } from 'react';
 import { useWebSocket } from '../hooks/useWebSocket';
 import type { Conversation } from '../types';
 
-// Hardcoded agent ID for demo purposes
-const AGENT_ID = 'agent-123';
+interface AgentDashboardProps {
+  userId: string;
+}
 
-export const AgentDashboard: React.FC = () => {
+export const AgentDashboard: React.FC<AgentDashboardProps> = ({ userId }) => {
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [activeConvId, setActiveConvId] = useState<string | null>(null);
   const [inputText, setInputText] = useState('');
   
   // Agent connection to hub (listens for all messages broadcasted to agent)
-  const wsUrl = `ws://${window.location.host}/ws?user_id=${AGENT_ID}&role=agent&conversation_id=all`;
+  const wsUrl = `ws://${window.location.host}/ws?user_id=${userId}&role=agent&conversation_id=all`;
   const { isConnected, messages, setMessages, smartDraft, setSmartDraft, resolvedConvId, setResolvedConvId, sendMessage } = useWebSocket(wsUrl);
 
   useEffect(() => {
@@ -124,7 +125,7 @@ export const AgentDashboard: React.FC = () => {
             
             <div className="flex-1 overflow-y-auto flex flex-col-reverse p-6 gap-4">
               {reversedMessages.map(m => {
-                const isAgent = m.sender_id === AGENT_ID;
+                const isAgent = m.sender_id === userId || m.sender_id === '00000000-0000-0000-0000-000000000000';
                 return (
                   <div key={m.id} className={`flex ${isAgent ? 'justify-end' : 'justify-start'}`}>
                     <div className={`max-w-[70%] px-5 py-3 text-sm shadow-sm ${

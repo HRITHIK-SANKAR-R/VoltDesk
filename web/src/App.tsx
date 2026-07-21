@@ -37,7 +37,7 @@ function AppContent() {
     )
   }
 
-  return <AgentDashboard />
+  return <AgentDashboard userId={user.user_id} />
 }
 
 function App() {

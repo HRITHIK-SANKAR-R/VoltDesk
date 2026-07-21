@@ -126,7 +126,7 @@ func (h *Hub) GenerateAIDraft(conversationID string) {
 	}
 	if draft != nil {
 		// Bypass draft phase and save immediately
-		savedMsg, err := h.queries.SaveMessage(conversationID, "ai-bot", draft.Content, false)
+		savedMsg, err := h.queries.SaveMessage(conversationID, "00000000-0000-0000-0000-000000000000", draft.Content, false)
 		if err != nil {
 			log.Printf("error saving AI message: %v", err)
 			return
