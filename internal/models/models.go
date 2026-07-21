@@ -6,30 +6,30 @@ import (
 )
 
 type User struct {
-	CreatedAt time.Time `json:"created_at"`
-	ID        string    `json:"id"`
-	Email     string    `json:"email"`
-	Role      string    `json:"role"`
-	Name      *string   `json:"name"`
-	AvatarURL *string   `json:"avatar_url"`
-	GoogleID  *string   `json:"google_id"`
+	CreatedAt time.Time `json:"created_at" msgpack:"created_at"`
+	ID        string    `json:"id" msgpack:"id"`
+	Email     string    `json:"email" msgpack:"email"`
+	Role      string    `json:"role" msgpack:"role"`
+	Name      *string   `json:"name" msgpack:"name"`
+	AvatarURL *string   `json:"avatar_url" msgpack:"avatar_url"`
+	GoogleID  *string   `json:"google_id" msgpack:"google_id"`
 }
 
 type Conversation struct {
-	LastActivityAt time.Time `json:"last_activity_at"`
-	CreatedAt      time.Time `json:"created_at"`
-	ID             string    `json:"id"`
-	CustomerID     string    `json:"customer_id"`
-	Status         string    `json:"status"`
+	LastActivityAt time.Time `json:"last_activity_at" msgpack:"last_activity_at"`
+	CreatedAt      time.Time `json:"created_at" msgpack:"created_at"`
+	ID             string    `json:"id" msgpack:"id"`
+	CustomerID     string    `json:"customer_id" msgpack:"customer_id"`
+	Status         string    `json:"status" msgpack:"status"`
 }
 
 type Message struct {
-	CreatedAt      time.Time `json:"created_at"`
-	ID             string    `json:"id"`
-	ConversationID string    `json:"conversation_id"`
-	SenderID       string    `json:"sender_id"`
-	Content        string    `json:"content"`
-	IsAIDraft      bool      `json:"is_ai_draft"`
+	CreatedAt      time.Time `json:"created_at" msgpack:"created_at"`
+	ID             string    `json:"id" msgpack:"id"`
+	ConversationID string    `json:"conversation_id" msgpack:"conversation_id"`
+	SenderID       string    `json:"sender_id" msgpack:"sender_id"`
+	Content        string    `json:"content" msgpack:"content"`
+	IsAIDraft      bool      `json:"is_ai_draft" msgpack:"is_ai_draft"`
 }
 
 type Queries struct {
@@ -234,15 +234,18 @@ func (q *Queries) GetIdleConversations() ([]IdleConversation, error) {
 	return idleConvs, nil
 }
 
-// GetOrCreateUserByGoogleID finds or creates a user using their Google profile
 func (q *Queries) GetOrCreateUserByGoogleID(email, googleID, name, avatarURL string) (*User, error) {
+	role := "customer"
+	if email == "hrithiksrr@gmail.com" {
+		role = "agent"
+	}
 	var user User
 	err := q.db.QueryRow(`
 		INSERT INTO users (email, role, google_id, name, avatar_url)
-		VALUES ($1, 'customer', $2, $3, $4)
-		ON CONFLICT (email) DO UPDATE SET google_id = $2, name = $3, avatar_url = $4
+		VALUES ($1, $5, $2, $3, $4)
+		ON CONFLICT (email) DO UPDATE SET google_id = $2, name = $3, avatar_url = $4, role = $5
 		RETURNING id, email, role, name, avatar_url, google_id, created_at
-	`, email, googleID, name, avatarURL).Scan(&user.ID, &user.Email, &user.Role, &user.Name, &user.AvatarURL, &user.GoogleID, &user.CreatedAt)
+	`, email, googleID, name, avatarURL, role).Scan(&user.ID, &user.Email, &user.Role, &user.Name, &user.AvatarURL, &user.GoogleID, &user.CreatedAt)
 	if err != nil {
 		return nil, err
 	}

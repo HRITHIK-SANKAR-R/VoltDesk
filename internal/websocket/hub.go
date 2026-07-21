@@ -125,10 +125,17 @@ func (h *Hub) GenerateAIDraft(conversationID string) {
 		return
 	}
 	if draft != nil {
-		// Publish to Redis
+		// Bypass draft phase and save immediately
+		savedMsg, err := h.queries.SaveMessage(conversationID, "ai-bot", draft.Content, false)
+		if err != nil {
+			log.Printf("error saving AI message: %v", err)
+			return
+		}
+
+		// Publish to Redis as a real chat_message
 		msgData := map[string]interface{}{
-			"type": "ai_smart_draft",
-			"payload": draft,
+			"type":            "chat_message",
+			"payload":         savedMsg,
 			"conversation_id": conversationID,
 		}
 		b, err := msgpack.Marshal(msgData)
