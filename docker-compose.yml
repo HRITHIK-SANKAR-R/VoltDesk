@@ -42,5 +42,14 @@ services:
       redis:
         condition: service_healthy
 
+  web:
+    build:
+      context: ./web
+      dockerfile: Dockerfile
+    ports:
+      - "80:80"
+    depends_on:
+      - api
+
 volumes:
   pgdata:
